@@ -388,6 +388,16 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (type === "clearbet") {
+      if (currentRoom.phase === "LOBBY" && self.bet > 0) {
+        self.stack += self.bet;
+        console.log(`${self.name} cleared bet of $${self.bet}`);
+        self.bet = 0;
+        broadcast(currentRoom);
+      }
+      return;
+    }
+
     if (type === "insurance") {
       if (currentRoom.phase === "INSURANCE" && self.stack >= self.bet / 2) {
         self.insuranceBet = self.bet / 2;
