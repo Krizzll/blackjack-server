@@ -1,0 +1,34 @@
+{
+  "srftgzjk": {
+    "stack": 5000,
+    "totalHands": 3,
+    "wins": 1,
+    "losses": 2,
+    "blackjacks": 0,
+    "pushes": 0,
+    "biggestWin": 200,
+    "currentStreak": 1,
+    "bestStreak": 1,
+    "xp": 35,
+    "level": 1,
+    "achievements": [
+      "first_win"
+    ],
+    "lastPlayed": 1760542921733
+  },
+  "abc": {
+    "stack": 500,
+    "totalHands": 3,
+    "wins": 0,
+    "losses": 2,
+    "blackjacks": 0,
+    "pushes": 1,
+    "biggestWin": 0,
+    "currentStreak": 0,
+    "bestStreak": 0,
+    "xp": 20,
+    "level": 1,
+    "achievements": [],
+    "lastPlayed": 1760542921734
+  }
+}
