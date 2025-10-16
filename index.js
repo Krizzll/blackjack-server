@@ -377,7 +377,7 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    if (type === "bet") {
+     if (type === "bet") {
       const v = payload?.value | 0;
       if (v > 0 && self.stack >= v) {
         self.stack -= v;
@@ -387,6 +387,7 @@ wss.on("connection", (ws) => {
       }
       return;
     }
+
 
     if (type === "clearbet") {
       if (currentRoom.phase === "LOBBY" && self.bet > 0) {
