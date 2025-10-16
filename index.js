@@ -330,8 +330,17 @@ wss.on("connection", (ws) => {
           turnIdx: -1,
           phase: "LOBBY",
           turnTimer: null,
+          maxPlayers: 8, // Max 8 Spieler
         }),
         rooms.get(roomId));
+
+      // Check if room is full
+      if (currentRoom.players.length >= (currentRoom.maxPlayers || 8)) {
+        console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId}`);
+        ws.send(JSON.stringify({ type: "error", message: "Room is full!" }));
+        ws.close();
+        return;
+      }
 
       self = {
         id: Math.random().toString(36).slice(2, 9),
@@ -346,7 +355,7 @@ wss.on("connection", (ws) => {
       };
 
       currentRoom.players.push(self);
-      console.log(`✅ ${self.name} joined room ${roomId}`);
+      console.log(`✅ ${self.name} joined room ${roomId} (${currentRoom.players.length}/${currentRoom.maxPlayers})`);
       broadcast(currentRoom);
       return;
     }
@@ -377,23 +386,12 @@ wss.on("connection", (ws) => {
       return;
     }
 
-     if (type === "bet") {
+    if (type === "bet") {
       const v = payload?.value | 0;
       if (v > 0 && self.stack >= v) {
         self.stack -= v;
         self.bet += v;
         console.log(`${self.name} bet $${v} (total: $${self.bet})`);
-        broadcast(currentRoom);
-      }
-      return;
-    }
-
-
-    if (type === "clearbet") {
-      if (currentRoom.phase === "LOBBY" && self.bet > 0) {
-        self.stack += self.bet;
-        console.log(`${self.name} cleared bet of $${self.bet}`);
-        self.bet = 0;
         broadcast(currentRoom);
       }
       return;
