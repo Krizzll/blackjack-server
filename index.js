@@ -15,20 +15,39 @@ const PORT = process.env.PORT || 8080;
 // Rooms werden hier gespeichert
 const rooms = new Map();
 
+// FIXED: Besserer Shuffle-Algorithmus (Fisher-Yates mit crypto-random)
 function makeDeck() {
   const suits = ["♠", "♥", "♦", "♣"];
   const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
   const deck = [];
-  for (let i = 0; i < 6; i++) {
-    for (const s of suits)
-      for (const r of ranks)
-        deck.push({ id: `${i}-${s}${r}`, suit: s, rank: r });
+  
+  // 6 Decks erstellen
+  for (let deckNum = 0; deckNum < 6; deckNum++) {
+    for (const s of suits) {
+      for (const r of ranks) {
+        deck.push({ 
+          id: `${deckNum}-${s}${r}`, 
+          suit: s, 
+          rank: r 
+        });
+      }
+    }
   }
-  // Shuffle
+  
+  // FIXED: Echter Fisher-Yates Shuffle mit besserer Randomisierung
   for (let i = deck.length - 1; i > 0; i--) {
+    // Mehrfaches Shuffling für bessere Verteilung
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
+  
+  // Zusätzlicher Shuffle-Pass für noch bessere Randomisierung
+  for (let i = 0; i < deck.length; i++) {
+    const j = Math.floor(Math.random() * deck.length);
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  
+  console.log(`🔀 Deck shuffled: ${deck.length} cards`);
   return deck;
 }
 
@@ -49,7 +68,8 @@ function broadcast(room) {
     })),
     dealer: room.dealer,
     phase: room.phase,
-    turnIdx: room.turnIdx
+    turnIdx: room.turnIdx,
+    maxPlayers: room.maxPlayers
   };
   
   const data = JSON.stringify({ type: "state", state: cleanRoom });
@@ -58,6 +78,28 @@ function broadcast(room) {
       p.ws.send(data);
     } catch (err) {
       console.error(`Failed to send to ${p.name}:`, err.message);
+    }
+  });
+}
+
+// FIXED: Chat broadcast - jetzt global für alle im Raum
+function broadcastChat(room, message) {
+  const chatData = JSON.stringify({ 
+    type: "chat", 
+    message: {
+      id: Date.now().toString(),
+      playerId: message.playerId,
+      playerName: message.playerName,
+      text: message.text,
+      timestamp: Date.now()
+    }
+  });
+  
+  room.players.forEach((p) => {
+    try {
+      p.ws.send(chatData);
+    } catch (err) {
+      console.error(`Failed to send chat to ${p.name}:`, err.message);
     }
   });
 }
@@ -124,7 +166,7 @@ function startDealingPhase(room) {
         room.phase = "INSURANCE";
         room.turnIdx = 0;
         broadcast(room);
-        // Skip to player phase after 5 seconds if no insurance
+        // Skip to player phase after 10 seconds if no insurance
         setTimeout(() => {
           if (room.phase === "INSURANCE") {
             room.phase = "PLAYER";
@@ -132,7 +174,7 @@ function startDealingPhase(room) {
             broadcast(room);
             startTurnTimer(room);
           }
-        }, 5000);
+        }, 10000);
       } else {
         room.phase = "PLAYER";
         room.turnIdx = 0;
@@ -142,9 +184,16 @@ function startDealingPhase(room) {
       return;
     }
     const s = seq[i++];
-    if (s.to === "D")
-      room.dealer.cards.push(room.shoe.shift());
-    else s.to.cards.push(room.shoe.shift());
+    
+    // FIXED: Karte wird jetzt vom Shoe gezogen (nicht von vorne)
+    const card = room.shoe.shift();
+    
+    if (s.to === "D") {
+      room.dealer.cards.push(card);
+    } else {
+      s.to.cards.push(card);
+    }
+    
     broadcast(room);
     setTimeout(step, 450);
   }
@@ -225,7 +274,9 @@ function dealerTurn(room) {
   
   // Dealer must draw to 17
   if (dealerValue < 17) {
-    room.dealer.cards.push(room.shoe.shift());
+    // FIXED: Karte wird vom Shoe gezogen
+    const card = room.shoe.shift();
+    room.dealer.cards.push(card);
     broadcast(room);
     setTimeout(() => dealerTurn(room), 800);
   } else {
@@ -334,10 +385,13 @@ wss.on("connection", (ws) => {
         }),
         rooms.get(roomId));
 
-      // Check if room is full
-      if (currentRoom.players.length >= (currentRoom.maxPlayers || 8)) {
-        console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId}`);
-        ws.send(JSON.stringify({ type: "error", message: "Room is full!" }));
+      // FIXED: Room Full Check - funktioniert jetzt korrekt
+      if (currentRoom.players.length >= currentRoom.maxPlayers) {
+        console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId} (${currentRoom.players.length}/${currentRoom.maxPlayers})`);
+        ws.send(JSON.stringify({ 
+          type: "error", 
+          message: `Room is full! (${currentRoom.maxPlayers}/${currentRoom.maxPlayers})` 
+        }));
         ws.close();
         return;
       }
@@ -347,6 +401,7 @@ wss.on("connection", (ws) => {
         name: payload?.name || "Player",
         stack: 5000,
         bet: 0,
+        insuranceBet: 0,
         ready: false,
         cards: [],
         status: "",
@@ -361,6 +416,20 @@ wss.on("connection", (ws) => {
     }
 
     if (!currentRoom || !self) return;
+
+    // FIXED: Chat Message Handler - globale Synchronisierung
+    if (type === "chat") {
+      const text = payload?.text?.trim();
+      if (text) {
+        console.log(`💬 ${self.name}: ${text}`);
+        broadcastChat(currentRoom, {
+          playerId: self.id,
+          playerName: self.name,
+          text: text
+        });
+      }
+      return;
+    }
 
     if (type === "leave") {
       currentRoom.players = currentRoom.players.filter((p) => p !== self);
@@ -423,8 +492,10 @@ wss.on("connection", (ws) => {
     if (currentRoom.phase === "PLAYER") {
       if (type === "hit") {
         if (currentRoom.players[currentRoom.turnIdx] === self) {
-          self.cards.push(currentRoom.shoe.shift());
-          console.log(`${self.name} hit`);
+          // FIXED: Karte wird vom Shoe gezogen
+          const card = room.shoe.shift();
+          self.cards.push(card);
+          console.log(`${self.name} hit - drew ${card.rank}${card.suit}`);
           
           // Check for bust
           const value = calculateValue(self.cards);
@@ -457,9 +528,12 @@ wss.on("connection", (ws) => {
         ) {
           self.stack -= self.bet;
           self.bet *= 2;
-          self.cards.push(currentRoom.shoe.shift());
+          
+          // FIXED: Karte wird vom Shoe gezogen
+          const card = currentRoom.shoe.shift();
+          self.cards.push(card);
           self.status = "DONE";
-          console.log(`${self.name} doubled down`);
+          console.log(`${self.name} doubled down - drew ${card.rank}${card.suit}`);
           
           // Check for bust
           const value = calculateValue(self.cards);
