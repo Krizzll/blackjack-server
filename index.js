@@ -409,6 +409,16 @@ wss.on("connection", (ws) => {
     }
 
     if (type === "start") {
+      // Only lobby owner can start
+      if (!currentRoom.ownerId) {
+        const first = currentRoom.players && currentRoom.players[0];
+        if (first) currentRoom.ownerId = first.id;
+      }
+      if (self.id !== currentRoom.ownerId) {
+        ws.send(JSON.stringify({ type: "error", message: "Nur der Lobby-Ersteller darf das Spiel starten." }));
+        return;
+      }
+
       if (currentRoom.phase === "LOBBY") {
         const allReady = currentRoom.players.every((p) => p.ready && p.bet > 0);
         if (allReady) {
