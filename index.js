@@ -12,35 +12,27 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 8080;
 
-// Rooms werden hier gespeichert
 const rooms = new Map();
 
-// FIXED: Besserer Shuffle-Algorithmus (Fisher-Yates mit crypto-random)
 function makeDeck() {
   const suits = ["♠", "♥", "♦", "♣"];
   const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
   const deck = [];
   
-  // 6 Decks erstellen
   for (let deckNum = 0; deckNum < 6; deckNum++) {
     for (const s of suits) {
       for (const r of ranks) {
-        deck.push({ 
-          id: `${deckNum}-${s}${r}`, 
-          suit: s, 
-          rank: r 
-        });
+        deck.push({ id: `${deckNum}-${s}${r}`, suit: s, rank: r });
       }
     }
   }
   
-  // FIXED: Echter Fisher-Yates Shuffle mit besserer Randomisierung
+  // Fisher-Yates Shuffle
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
   
-  // Zusätzlicher Shuffle-Pass für noch bessere Randomisierung
   for (let i = 0; i < deck.length; i++) {
     const j = Math.floor(Math.random() * deck.length);
     [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -51,7 +43,6 @@ function makeDeck() {
 }
 
 function broadcast(room) {
-  // Create a clean copy without WebSocket connections and timers
   const cleanRoom = {
     code: room.code,
     players: room.players.map(p => ({
@@ -81,7 +72,6 @@ function broadcast(room) {
   });
 }
 
-// FIXED: Chat broadcast - jetzt global für alle im Raum
 function broadcastChat(room, message) {
   const chatData = JSON.stringify({ 
     type: "chat", 
@@ -104,8 +94,7 @@ function broadcastChat(room, message) {
 }
 
 function calculateValue(cards) {
-  let sum = 0;
-  let aces = 0;
+  let sum = 0, aces = 0;
   for (const c of cards) {
     if (c.rank === "A") {
       aces++;
@@ -124,17 +113,12 @@ function calculateValue(cards) {
 }
 
 function startRound(room) {
-  // Check if shoe needs reshuffling (less than 52 cards left)
   if (room.shoe.length < 52) {
     console.log(`🔀 Reshuffling deck in room ${room.code}`);
     room.shoe = makeDeck();
     room.discard = [];
-    
-    // Send shuffle notification
     room.phase = "SHUFFLING";
     broadcast(room);
-    
-    // Wait 2 seconds for shuffle animation
     setTimeout(() => startDealingPhase(room), 2000);
   } else {
     startDealingPhase(room);
@@ -150,7 +134,6 @@ function startDealingPhase(room) {
     p.result = null;
   });
 
-  // Deal sequence: Player1, Dealer, Player2, Dealer (etc)
   const seq = [];
   room.players.forEach((p) => seq.push({ to: p }));
   seq.push({ to: "D" });
@@ -160,12 +143,10 @@ function startDealingPhase(room) {
   let i = 0;
   function step() {
     if (i >= seq.length) {
-      // Check if dealer shows Ace for insurance
       if (room.dealer.cards[0]?.rank === "A") {
         room.phase = "INSURANCE";
         room.turnIdx = 0;
         broadcast(room);
-        // Skip to player phase after 10 seconds if no insurance
         setTimeout(() => {
           if (room.phase === "INSURANCE") {
             room.phase = "PLAYER";
@@ -182,9 +163,8 @@ function startDealingPhase(room) {
       }
       return;
     }
-    const s = seq[i++];
     
-    // FIXED: Karte wird jetzt vom Shoe gezogen (nicht von vorne)
+    const s = seq[i++];
     const card = room.shoe.shift();
     
     if (s.to === "D") {
@@ -200,30 +180,20 @@ function startDealingPhase(room) {
 }
 
 function startTurnTimer(room) {
-  // Clear any existing timer
   if (room.turnTimer) {
     clearTimeout(room.turnTimer);
     room.turnTimer = null;
   }
 
-  // Check if we're still in PLAYER phase
-  if (room.phase !== "PLAYER" || room.turnIdx < 0) {
-    console.log("⏱️ Timer not started: not in PLAYER phase or invalid turnIdx");
-    return;
-  }
+  if (room.phase !== "PLAYER" || room.turnIdx < 0) return;
 
   const current = room.players[room.turnIdx];
-  if (!current) {
-    console.log("⏱️ Timer not started: no current player");
-    return;
-  }
+  if (!current) return;
 
   console.log(`⏱️ Timer started for ${current.name} (20 seconds)`);
   
   room.turnTimer = setTimeout(() => {
     console.log(`⏰ Timeout for player ${current.name}`);
-    
-    // Double-check we're still in the right phase and it's still this player's turn
     if (room.phase === "PLAYER" && room.players[room.turnIdx] === current) {
       if (current.status !== "DONE" && current.status !== "BUST") {
         current.status = "TIMEOUT";
@@ -231,18 +201,15 @@ function startTurnTimer(room) {
         broadcast(room);
       }
     }
-  }, 20000); // 20 seconds
+  }, 20000);
 }
 
 function nextTurn(room) {
-  // Clear the timer
   if (room.turnTimer) {
     clearTimeout(room.turnTimer);
     room.turnTimer = null;
-    console.log("⏱️ Timer cleared");
   }
 
-  // Find next player who hasn't finished
   let nextIdx = -1;
   for (let i = room.turnIdx + 1; i < room.players.length; i++) {
     const p = room.players[i];
@@ -253,14 +220,12 @@ function nextTurn(room) {
   }
 
   if (nextIdx === -1) {
-    // All players done, dealer's turn
     console.log("🎩 All players done, dealer's turn");
     room.phase = "DEALER";
     room.turnIdx = -1;
     broadcast(room);
     setTimeout(() => dealerTurn(room), 1000);
   } else {
-    // Next player's turn
     room.turnIdx = nextIdx;
     console.log(`👉 Next turn: ${room.players[nextIdx].name}`);
     broadcast(room);
@@ -271,15 +236,12 @@ function nextTurn(room) {
 function dealerTurn(room) {
   const dealerValue = calculateValue(room.dealer.cards);
   
-  // Dealer must draw to 17
   if (dealerValue < 17) {
-    // FIXED: Karte wird vom Shoe gezogen
     const card = room.shoe.shift();
     room.dealer.cards.push(card);
     broadcast(room);
     setTimeout(() => dealerTurn(room), 800);
   } else {
-    // Dealer done, evaluate results
     setTimeout(() => evaluateResults(room), 1000);
   }
 }
@@ -295,9 +257,8 @@ function evaluateResults(room) {
     const playerBust = playerValue > 21;
     const isBlackjack = player.cards.length === 2 && playerValue === 21;
 
-    // Handle insurance
     if (player.insuranceBet && dealerBlackjack) {
-      player.stack += player.insuranceBet * 3; // Insurance pays 2:1
+      player.stack += player.insuranceBet * 3;
       console.log(`${player.name} insurance paid ${player.insuranceBet * 2}`);
     }
 
@@ -347,12 +308,8 @@ function evaluateResults(room) {
       p.result = null;
     });
     broadcast(room);
-  }, 5000);
+  }, 8000);
 }
-
-// ============================
-// WebSocket setup
-// ============================
 
 wss.on("connection", (ws) => {
   let currentRoom = null;
@@ -367,11 +324,9 @@ wss.on("connection", (ws) => {
 
     const { type, roomId, payload } = msg;
 
-    // Player will einem Raum joinen oder neuen erstellen
     if (type === "join") {
-      currentRoom =
-        rooms.get(roomId) ||
-        (rooms.set(roomId, {
+      currentRoom = rooms.get(roomId) || (
+        rooms.set(roomId, {
           code: roomId,
           leader: null,
           players: [],
@@ -383,11 +338,11 @@ wss.on("connection", (ws) => {
           turnTimer: null,
           maxPlayers: 8,
         }),
-        rooms.get(roomId));
+        rooms.get(roomId)
+      );
 
-      // FIXED: Room Full Check - funktioniert jetzt korrekt
       if (currentRoom.players.length >= currentRoom.maxPlayers) {
-        console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId} (${currentRoom.players.length}/${currentRoom.maxPlayers})`);
+        console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId}`);
         ws.send(JSON.stringify({ 
           type: "error", 
           message: `Room is full! (${currentRoom.maxPlayers}/${currentRoom.maxPlayers})` 
@@ -417,7 +372,6 @@ wss.on("connection", (ws) => {
 
     if (!currentRoom || !self) return;
 
-    // FIXED: Chat Message Handler - globale Synchronisierung
     if (type === "chat") {
       const text = payload?.text?.trim();
       if (text) {
@@ -435,7 +389,6 @@ wss.on("connection", (ws) => {
       currentRoom.players = currentRoom.players.filter((p) => p !== self);
       console.log(`👋 ${self.name} left room ${currentRoom.code}`);
       
-      // Clean up if no players left
       if (currentRoom.players.length === 0) {
         if (currentRoom.turnTimer) clearTimeout(currentRoom.turnTimer);
         rooms.delete(currentRoom.code);
@@ -466,7 +419,6 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // FIXED: Clear Bet Handler
     if (type === "clearbet") {
       if (currentRoom.phase === "LOBBY" && self.bet > 0) {
         self.stack += self.bet;
@@ -499,16 +451,13 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // Spieleraktionen während der Player-Phase
     if (currentRoom.phase === "PLAYER") {
       if (type === "hit") {
         if (currentRoom.players[currentRoom.turnIdx] === self) {
-          // FIXED: Karte wird vom Shoe gezogen
           const card = currentRoom.shoe.shift();
           self.cards.push(card);
           console.log(`${self.name} hit - drew ${card.rank}${card.suit}`);
           
-          // Check for bust
           const value = calculateValue(self.cards);
           if (value > 21) {
             self.status = "BUST";
@@ -540,13 +489,11 @@ wss.on("connection", (ws) => {
           self.stack -= self.bet;
           self.bet *= 2;
           
-          // FIXED: Karte wird vom Shoe gezogen
           const card = currentRoom.shoe.shift();
           self.cards.push(card);
           self.status = "DONE";
           console.log(`${self.name} doubled down - drew ${card.rank}${card.suit}`);
           
-          // Check for bust
           const value = calculateValue(self.cards);
           if (value > 21) {
             self.status = "BUST";
@@ -566,7 +513,6 @@ wss.on("connection", (ws) => {
       currentRoom.players = currentRoom.players.filter((p) => p !== self);
       console.log(`❌ ${self.name} disconnected from ${currentRoom.code}`);
       
-      // If no players left, clean up room
       if (currentRoom.players.length === 0) {
         if (currentRoom.turnTimer) clearTimeout(currentRoom.turnTimer);
         rooms.delete(currentRoom.code);
