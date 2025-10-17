@@ -464,6 +464,17 @@ wss.on("connection", (ws) => {
         broadcast(currentRoom);
       }
       return;
+    
+    }
+
+    if (type === "clearbet") {
+      if (currentRoom.phase === "LOBBY" && self.bet > 0) {
+      self.stack += self.bet;
+        self.bet = 0;
+        console.log(`${self.name} cleared bet`);
+        broadcast(currentRoom);
+      }
+      return;
     }
 
     if (type === "insurance") {
