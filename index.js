@@ -36,7 +36,6 @@ function makeDeck() {
   
   // FIXED: Echter Fisher-Yates Shuffle mit besserer Randomisierung
   for (let i = deck.length - 1; i > 0; i--) {
-    // Mehrfaches Shuffling für bessere Verteilung
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
@@ -311,7 +310,7 @@ function evaluateResults(room) {
       player.stack += player.bet;
     } else if (isBlackjack) {
       player.result = "BLACKJACK";
-      player.status = "BLACKJACK! 🎉";
+      player.status = "BLACKJACK!";
       player.stack += Math.floor(player.bet * 2.5);
     } else if (dealerBust) {
       player.result = "WIN";
@@ -374,6 +373,7 @@ wss.on("connection", (ws) => {
         rooms.get(roomId) ||
         (rooms.set(roomId, {
           code: roomId,
+          leader: null,
           players: [],
           dealer: { cards: [] },
           shoe: makeDeck(),
@@ -381,7 +381,7 @@ wss.on("connection", (ws) => {
           turnIdx: -1,
           phase: "LOBBY",
           turnTimer: null,
-          maxPlayers: 8, // Max 8 Spieler
+          maxPlayers: 8,
         }),
         rooms.get(roomId));
 
@@ -464,12 +464,12 @@ wss.on("connection", (ws) => {
         broadcast(currentRoom);
       }
       return;
-    
     }
 
+    // FIXED: Clear Bet Handler
     if (type === "clearbet") {
       if (currentRoom.phase === "LOBBY" && self.bet > 0) {
-      self.stack += self.bet;
+        self.stack += self.bet;
         self.bet = 0;
         console.log(`${self.name} cleared bet`);
         broadcast(currentRoom);
@@ -504,7 +504,7 @@ wss.on("connection", (ws) => {
       if (type === "hit") {
         if (currentRoom.players[currentRoom.turnIdx] === self) {
           // FIXED: Karte wird vom Shoe gezogen
-          const card = room.shoe.shift();
+          const card = currentRoom.shoe.shift();
           self.cards.push(card);
           console.log(`${self.name} hit - drew ${card.rank}${card.suit}`);
           
