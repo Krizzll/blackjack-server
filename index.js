@@ -322,84 +322,90 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    const { type, roomId, payload } = msg;
+const { type, roomId, payload } = msg;
 
-    if (type === "join") {
-      currentRoom = rooms.get(roomId) || (
-        rooms.set(roomId, {
-          code: roomId,
-          leader: null,
-          players: [],
-          dealer: { cards: [] },
-          shoe: makeDeck(),
-          discard: [],
-          turnIdx: -1,
-          phase: "LOBBY",
-          turnTimer: null,
-          maxPlayers: 8,
-        }),
-        rooms.get(roomId)
-      );
+// 1. JOIN HANDLER (komplett abgeschlossen)
+if (type === "join") {
+  currentRoom = rooms.get(roomId) || (
+    rooms.set(roomId, {
+      code: roomId,
+      leader: null,
+      players: [],
+      dealer: { cards: [] },
+      shoe: makeDeck(),
+      discard: [],
+      turnIdx: -1,
+      phase: "LOBBY",
+      turnTimer: null,
+      maxPlayers: 8,
+    }),
+    rooms.get(roomId)
+  );
 
-      if (currentRoom.players.length >= currentRoom.maxPlayers) {
-        console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId}`);
-        ws.send(JSON.stringify({ 
-          type: "error", 
-          message: `Room is full! (${currentRoom.maxPlayers}/${currentRoom.maxPlayers})` 
-        }));
-        ws.close();
-        return;
-      }
+  if (currentRoom.players.length >= currentRoom.maxPlayers) {
+    console.log(`❌ ${payload?.name || "Player"} tried to join full room ${roomId}`);
+    ws.send(JSON.stringify({ 
+      type: "error", 
+      message: `Room is full! (${currentRoom.maxPlayers}/${currentRoom.maxPlayers})` 
+    }));
+    ws.close();
+    return;
+  }
 
-      self = {
-        id: Math.random().toString(36).slice(2, 9),
-        name: payload?.name || "Player",
-        stack: 5000,
-        bet: 0,
-        insuranceBet: 0,
-        ready: false,
-        cards: [],
-        status: "",
-        result: null,
-        ws,
-      };
+  self = {
+    id: Math.random().toString(36).slice(2, 9),
+    name: payload?.name || "Player",
+    stack: 5000,
+    bet: 0,
+    insuranceBet: 0,
+    ready: false,
+    cards: [],
+    status: "",
+    result: null,
+    ws,
+  };
 
-      currentRoom.players.push(self);
-      console.log(`✅ ${self.name} joined room ${roomId} (${currentRoom.players.length}/${currentRoom.maxPlayers})`);
-      broadcast(currentRoom);
-      return;
-    }
+  currentRoom.players.push(self);
+  console.log(`✅ ${self.name} joined room ${roomId} (${currentRoom.players.length}/${currentRoom.maxPlayers})`);
+  broadcast(currentRoom);
+  return;
+} // <-- JOIN BLOCK ENDET HIER!
 
-    if (!currentRoom || !self) return;
+// 2. Jetzt prüfen ob currentRoom und self existieren
+if (!currentRoom || !self) return;
 
-    if (type === "chat") {
-      const text = payload?.text?.trim();
-      if (text) {
-        console.log(`💬 ${self.name}: ${text}`);
-        broadcastChat(currentRoom, {
-          playerId: self.id,
-          playerName: self.name,
-          text: text
-        });
-      }
-      return;
-    }
+// 3. CHAT HANDLER (nach der Prüfung)
+if (type === "chat") {
+  const text = payload?.text?.trim();
+  if (text) {
+    console.log(`💬 ${self.name}: ${text}`);
+    broadcastChat(currentRoom, {
+      playerId: self.id,
+      playerName: self.name,
+      text: text
+    });
+  }
+  return;
+}
 
-    if (type === "leave") {
-      currentRoom.players = currentRoom.players.filter((p) => p !== self);
-      console.log(`👋 ${self.name} left room ${currentRoom.code}`);
-      
-      if (currentRoom.players.length === 0) {
-        if (currentRoom.turnTimer) clearTimeout(currentRoom.turnTimer);
-        rooms.delete(currentRoom.code);
-        console.log(`🗑️  Room ${currentRoom.code} deleted (empty)`);
-      } else {
-        broadcast(currentRoom);
-      }
-      
-      ws.close();
-      return;
-    }
+// 4. LEAVE HANDLER
+if (type === "leave") {
+  currentRoom.players = currentRoom.players.filter((p) => p !== self);
+  console.log(`👋 ${self.name} left room ${currentRoom.code}`);
+  
+  if (currentRoom.players.length === 0) {
+    if (currentRoom.turnTimer) clearTimeout(currentRoom.turnTimer);
+    rooms.delete(currentRoom.code);
+    console.log(`🗑️  Room ${currentRoom.code} deleted (empty)`);
+  } else {
+    broadcast(currentRoom);
+  }
+  
+  ws.close();
+  return;
+}
+
+// ... rest der Handler (ready, bet, insurance, etc.)
 
     if (type === "ready") {
       self.ready = !!payload?.ready;
